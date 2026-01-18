@@ -15,6 +15,7 @@ type UserRepository interface {
 	FindByID(id uuid.UUID) (*models.User, error)
 	Update(user *models.User) error
 	UpdateStatus(userID uuid.UUID, status string) error
+	FindByUsername(username string) (*models.User, error)
 }
 
 type postgresUserRepository struct {
@@ -143,4 +144,33 @@ func (r *postgresUserRepository) UpdateStatus(userID uuid.UUID, status string) e
 	`
 	_, err := r.db.Exec(query, status, userID)
 	return err
+}
+
+func (r *postgresUserRepository) FindByUsername(username string) (*models.User, error) {
+	user := &models.User{}
+	query := `
+		SELECT id, email, username, password_hash, full_name, avatar_url, status, status_message, created_at, updated_at, last_seen_at
+		FROM users
+		WHERE LOWER(username) = LOWER($1)
+	`
+	err := r.db.QueryRow(query, username).Scan(
+		&user.ID,
+		&user.Email,
+		&user.Username,
+		&user.PasswordHash,
+		&user.FullName,
+		&user.AvatarURL,
+		&user.Status,
+		&user.StatusMessage,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+		&user.LastSeenAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to find user by username: %w", err)
+	}
+	return user, nil
 }

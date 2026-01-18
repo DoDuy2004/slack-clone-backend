@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"regexp"
 
 	"github.com/DoDuy2004/slack-clone/backend/internal/models"
 	"github.com/DoDuy2004/slack-clone/backend/internal/models/dto"
@@ -29,6 +30,7 @@ type messageService struct {
 	workspaceRepo  repository.WorkspaceRepository
 	dmRepo         repository.DMRepository
 	attachmentRepo repository.AttachmentRepository
+	userRepo       repository.UserRepository
 }
 
 func NewMessageService(
@@ -37,6 +39,7 @@ func NewMessageService(
 	workspaceRepo repository.WorkspaceRepository,
 	dmRepo repository.DMRepository,
 	attachmentRepo repository.AttachmentRepository,
+	userRepo repository.UserRepository,
 ) MessageService {
 	return &messageService{
 		messageRepo:    messageRepo,
@@ -44,6 +47,7 @@ func NewMessageService(
 		workspaceRepo:  workspaceRepo,
 		dmRepo:         dmRepo,
 		attachmentRepo: attachmentRepo,
+		userRepo:       userRepo,
 	}
 }
 
@@ -284,4 +288,38 @@ func (s *messageService) DeleteMessage(userID uuid.UUID, messageID uuid.UUID) er
 	}
 
 	return s.messageRepo.SoftDelete(messageID)
+}
+
+func (s *messageService) detectMentions(workspaceID uuid.UUID, content string) ([]uuid.UUID, error) {
+	// Simple regex to find @username
+	re := regexp.MustCompile(`@(\w+)`)
+	matches := re.FindAllStringSubmatch(content, -1)
+
+	if len(matches) == 0 {
+		return nil, nil
+	}
+
+	var mentionedIDs []uuid.UUID
+	seen := make(map[string]bool)
+
+	for _, match := range matches {
+		username := match[1]
+		if seen[username] {
+			continue
+		}
+		seen[username] = true
+
+		user, err := s.userRepo.FindByUsername(username)
+		if err != nil || user == nil {
+			continue // User doesn't exist
+		}
+
+		// Verify workspace membership
+		member, _ := s.workspaceRepo.GetMember(workspaceID, user.ID)
+		if member != nil {
+			mentionedIDs = append(mentionedIDs, user.ID)
+		}
+	}
+
+	return mentionedIDs, nil
 }

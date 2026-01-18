@@ -13,7 +13,7 @@ var (
 )
 
 type DMService interface {
-	GetOrCreateDM(userID uuid.UUID, workspaceID uuid.UUID, recipientID uuid.UUID) (*models.DirectMessage, error)
+	CreateDM(userID uuid.UUID, workspaceID uuid.UUID, participantIDs []uuid.UUID) (*models.DirectMessage, error)
 	ListUserDMs(userID, workspaceID uuid.UUID) ([]*models.DirectMessage, error)
 }
 
@@ -35,31 +35,41 @@ func NewDMService(
 	}
 }
 
-func (s *dmService) GetOrCreateDM(userID uuid.UUID, workspaceID uuid.UUID, recipientID uuid.UUID) (*models.DirectMessage, error) {
-	if userID == recipientID {
-		return nil, errors.New("cannot create DM with yourself")
+func (s *dmService) CreateDM(userID uuid.UUID, workspaceID uuid.UUID, participantIDs []uuid.UUID) (*models.DirectMessage, error) {
+	// Add current user to participants list if not present
+	found := false
+	for _, pID := range participantIDs {
+		if pID == userID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		participantIDs = append(participantIDs, userID)
 	}
 
-	// 1. Verify both users are in the same workspace
-	senderMember, err := s.workspaceRepo.GetMember(workspaceID, userID)
-	if err != nil || senderMember == nil {
-		return nil, ErrUnauthorized
+	if len(participantIDs) < 2 {
+		return nil, errors.New("a DM must have at least 2 participants")
 	}
 
-	recipientMember, err := s.workspaceRepo.GetMember(workspaceID, recipientID)
-	if err != nil || recipientMember == nil {
-		return nil, errors.New("recipient is not a member of this workspace")
+	// 1. Verify all users are members of the workspace
+	for _, pID := range participantIDs {
+		member, err := s.workspaceRepo.GetMember(workspaceID, pID)
+		if err != nil || member == nil {
+			return nil, errors.New("all participants must be members of the workspace")
+		}
 	}
 
 	// 2. Check if DM already exists
-	participants := []uuid.UUID{userID, recipientID}
-	dm, err := s.dmRepo.FindByParticipants(workspaceID, participants)
+	dm, err := s.dmRepo.FindByParticipants(workspaceID, participantIDs)
 	if err != nil {
 		return nil, err
 	}
 
 	if dm != nil {
-		return dm, nil
+		// DM already exists, but we want to return it with participants populated
+		// ListUserDMs handles this, but for a single DM we might need another repo method or just fetch here
+		return s.populateDM(dm)
 	}
 
 	// 3. Create new DM
@@ -68,11 +78,16 @@ func (s *dmService) GetOrCreateDM(userID uuid.UUID, workspaceID uuid.UUID, recip
 		WorkspaceID: workspaceID,
 	}
 
-	if err := s.dmRepo.Create(newDM, participants); err != nil {
+	if err := s.dmRepo.Create(newDM, participantIDs); err != nil {
 		return nil, err
 	}
 
-	return newDM, nil
+	return s.populateDM(newDM)
+}
+
+func (s *dmService) populateDM(dm *models.DirectMessage) (*models.DirectMessage, error) {
+	// For a single DM creation/get, individual queries are fine.
+	return dm, nil
 }
 
 func (s *dmService) ListUserDMs(userID, workspaceID uuid.UUID) ([]*models.DirectMessage, error) {

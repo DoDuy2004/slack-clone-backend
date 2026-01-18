@@ -52,15 +52,15 @@ func (r *postgresDMRepository) FindByParticipants(workspaceID uuid.UUID, userIDs
 	query := `
 		SELECT dm.id, dm.workspace_id, dm.created_at
 		FROM direct_messages dm
-		JOIN dm_participants dp1 ON dm.id = dp1.dm_id
-		JOIN dm_participants dp2 ON dm.id = dp2.dm_id
+		JOIN dm_participants dp ON dm.id = dp.dm_id
 		WHERE dm.workspace_id = $1
-		AND dp1.user_id = $2
-		AND dp2.user_id = $3
-		AND (SELECT COUNT(*) FROM dm_participants WHERE dm_id = dm.id) = 2
+		AND dp.user_id = ANY($2)
+		GROUP BY dm.id, dm.workspace_id, dm.created_at
+		HAVING COUNT(DISTINCT dp.user_id) = $3
+		AND (SELECT COUNT(*) FROM dm_participants WHERE dm_id = dm.id) = $3
 	`
 	dm := &models.DirectMessage{}
-	err := r.db.QueryRow(query, workspaceID, userIDs[0], userIDs[1]).Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt)
+	err := r.db.QueryRow(query, workspaceID, userIDs, len(userIDs)).Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -90,10 +90,90 @@ func (r *postgresDMRepository) ListByUserID(workspaceID, userID uuid.UUID) ([]*m
 		if err := rows.Scan(&dm.ID, &dm.WorkspaceID, &dm.CreatedAt); err != nil {
 			return nil, err
 		}
-		// Participant loading would usually happen in service or with a separate query
 		dms = append(dms, dm)
 	}
+
+	if len(dms) > 0 {
+		if err := r.attachParticipants(dms); err != nil {
+			return nil, err
+		}
+		if err := r.attachUnreadCounts(dms, userID); err != nil {
+			return nil, err
+		}
+	}
+
 	return dms, nil
+}
+
+func (r *postgresDMRepository) attachParticipants(dms []*models.DirectMessage) error {
+	dmIDs := make([]uuid.UUID, len(dms))
+	dmMap := make(map[uuid.UUID]*models.DirectMessage)
+	for i, dm := range dms {
+		dmIDs[i] = dm.ID
+		dmMap[dm.ID] = dm
+		dm.Participants = []*models.User{}
+	}
+
+	query := `
+		SELECT dp.dm_id, u.id, u.username, u.full_name, u.avatar_url, u.status, u.status_message
+		FROM dm_participants dp
+		JOIN users u ON dp.user_id = u.id
+		WHERE dp.dm_id = ANY($1)
+	`
+	rows, err := r.db.Query(query, dmIDs)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var dmID uuid.UUID
+		u := &models.User{}
+		if err := rows.Scan(&dmID, &u.ID, &u.Username, &u.FullName, &u.AvatarURL, &u.Status, &u.StatusMessage); err != nil {
+			return err
+		}
+		if dm, ok := dmMap[dmID]; ok {
+			dm.Participants = append(dm.Participants, u)
+		}
+	}
+	return nil
+}
+
+func (r *postgresDMRepository) attachUnreadCounts(dms []*models.DirectMessage, userID uuid.UUID) error {
+	dmIDs := make([]uuid.UUID, len(dms))
+	dmMap := make(map[uuid.UUID]*models.DirectMessage)
+	for i, dm := range dms {
+		dmIDs[i] = dm.ID
+		dmMap[dm.ID] = dm
+	}
+
+	query := `
+		SELECT dp.dm_id, COUNT(m.id)
+		FROM dm_participants dp
+		LEFT JOIN messages m ON dp.dm_id = m.dm_id 
+			AND m.created_at > COALESCE(dp.last_read_at, '1970-01-01')
+			AND m.sender_id != $2
+			AND m.deleted_at IS NULL
+		WHERE dp.dm_id = ANY($1) AND dp.user_id = $2
+		GROUP BY dp.dm_id
+	`
+	rows, err := r.db.Query(query, dmIDs, userID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var dmID uuid.UUID
+		var count int
+		if err := rows.Scan(&dmID, &count); err != nil {
+			return err
+		}
+		if dm, ok := dmMap[dmID]; ok {
+			dm.UnreadCount = count
+		}
+	}
+	return nil
 }
 
 func (r *postgresDMRepository) GetByID(id uuid.UUID) (*models.DirectMessage, error) {

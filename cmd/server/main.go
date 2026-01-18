@@ -90,7 +90,7 @@ func main() {
 	authService := service.NewAuthService(userRepo, jwtManager)
 	workspaceService := service.NewWorkspaceService(workspaceRepo)
 	channelService := service.NewChannelService(channelRepo, workspaceRepo)
-	messageService := service.NewMessageService(messageRepo, channelRepo, workspaceRepo, dmRepo, attachmentRepo)
+	messageService := service.NewMessageService(messageRepo, channelRepo, workspaceRepo, dmRepo, attachmentRepo, userRepo)
 	dmService := service.NewDMService(dmRepo, workspaceRepo, userRepo)
 	reactionService := service.NewReactionService(reactionRepo, messageRepo, channelRepo, dmRepo, workspaceRepo)
 	fileService := service.NewFileService(attachmentRepo, storageService)

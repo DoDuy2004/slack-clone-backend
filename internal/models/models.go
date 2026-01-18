@@ -47,6 +47,9 @@ type Channel struct {
 	CreatedBy   *uuid.UUID `json:"created_by,omitempty" db:"created_by"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+
+	// Virtual fields
+	UnreadCount int `json:"unread_count" db:"-"`
 }
 
 type ChannelMember struct {
@@ -61,6 +64,10 @@ type DirectMessage struct {
 	ID          uuid.UUID `json:"id" db:"id"`
 	WorkspaceID uuid.UUID `json:"workspace_id" db:"workspace_id"`
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+
+	// Virtual fields
+	Participants []*User `json:"participants,omitempty" db:"-"`
+	UnreadCount  int     `json:"unread_count" db:"-"`
 }
 
 type DMParticipant struct {

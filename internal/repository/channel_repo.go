@@ -90,8 +90,14 @@ func (r *postgresChannelRepository) FindByID(id uuid.UUID) (*models.Channel, err
 
 func (r *postgresChannelRepository) ListByWorkspaceID(workspaceID uuid.UUID, userID uuid.UUID) ([]*models.Channel, error) {
 	// List public channels OR private channels where user is a member
+	// Also include unread count for the current user
 	query := `
-		SELECT c.id, c.workspace_id, c.name, c.description, c.is_private, c.created_by, c.created_at, c.updated_at
+		SELECT c.id, c.workspace_id, c.name, c.description, c.is_private, c.created_by, c.created_at, c.updated_at,
+		       (SELECT COUNT(*) FROM messages m 
+		        WHERE m.channel_id = c.id 
+		        AND m.created_at > COALESCE(cm.last_read_at, '1970-01-01')
+		        AND m.sender_id != $2
+		        AND m.deleted_at IS NULL) as unread_count
 		FROM channels c
 		LEFT JOIN channel_members cm ON c.id = cm.channel_id AND cm.user_id = $2
 		WHERE c.workspace_id = $1 AND (c.is_private = false OR cm.user_id IS NOT NULL)
@@ -106,7 +112,7 @@ func (r *postgresChannelRepository) ListByWorkspaceID(workspaceID uuid.UUID, use
 	var channels []*models.Channel
 	for rows.Next() {
 		c := &models.Channel{}
-		if err := rows.Scan(&c.ID, &c.WorkspaceID, &c.Name, &c.Description, &c.IsPrivate, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.WorkspaceID, &c.Name, &c.Description, &c.IsPrivate, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.UnreadCount); err != nil {
 			return nil, err
 		}
 		channels = append(channels, c)

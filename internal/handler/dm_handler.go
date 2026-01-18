@@ -36,7 +36,7 @@ func (h *DMHandler) GetOrCreate(c *gin.Context) {
 		return
 	}
 
-	dm, err := h.dmService.GetOrCreateDM(userID, workspaceID, req.RecipientID)
+	dm, err := h.dmService.CreateDM(userID, workspaceID, req.ParticipantIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
