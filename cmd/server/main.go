@@ -97,6 +97,8 @@ func main() {
 	readService := service.NewReadReceiptService(channelRepo, dmRepo, hub)
 	searchService := service.NewSearchService(messageRepo, workspaceRepo)
 	userService := service.NewUserService(userRepo)
+	inviteRepo := repository.NewInviteRepository(db)
+	inviteService := service.NewInviteService(inviteRepo, workspaceRepo)
 
 	presenceService := service.NewPresenceService(userRepo, hub)
 
@@ -111,6 +113,7 @@ func main() {
 	readHandler := handler.NewReadReceiptHandler(readService)
 	searchHandler := handler.NewSearchHandler(searchService)
 	userHandler := handler.NewUserHandler(userService)
+	inviteHandler := handler.NewInviteHandler(inviteService)
 	wsHandler := websocket.NewHandler(hub, jwtManager, presenceService)
 
 	// Create Gin router
@@ -230,6 +233,10 @@ func main() {
 	// User routes
 	router.GET("/api/users/profile", middleware.AuthMiddleware(jwtManager), userHandler.GetProfile)
 	router.PUT("/api/users/profile", middleware.AuthMiddleware(jwtManager), userHandler.UpdateProfile)
+
+	// Invite routes
+	router.POST("/api/workspaces/:id/invites", middleware.AuthMiddleware(jwtManager), inviteHandler.Create)
+	router.POST("/api/invites/:code/join", middleware.AuthMiddleware(jwtManager), inviteHandler.Join)
 
 	// WebRTC signaling endpoint
 	router.GET("/webrtc/signaling", func(c *gin.Context) {

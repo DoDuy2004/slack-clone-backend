@@ -21,13 +21,13 @@ type User struct {
 }
 
 type Workspace struct {
-	ID        uuid.UUID  `json:"id" db:"id"`
-	Name      string     `json:"name" db:"name"`
-	Slug      string     `json:"slug" db:"slug"`
-	IconURL   *string    `json:"icon_url,omitempty" db:"icon_url"`
-	OwnerID   uuid.UUID  `json:"owner_id" db:"owner_id"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
+	ID        uuid.UUID `json:"id" db:"id"`
+	Name      string    `json:"name" db:"name"`
+	Slug      string    `json:"slug" db:"slug"`
+	IconURL   *string   `json:"icon_url,omitempty" db:"icon_url"`
+	OwnerID   uuid.UUID `json:"owner_id" db:"owner_id"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type WorkspaceMember struct {
@@ -81,7 +81,7 @@ type Message struct {
 	DeletedAt       *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
 	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
-	
+
 	// Virtual fields (not in DB, populated by queries)
 	Sender      *User        `json:"sender,omitempty" db:"-"`
 	Reactions   []Reaction   `json:"reactions,omitempty" db:"-"`
@@ -95,7 +95,7 @@ type Reaction struct {
 	UserID    uuid.UUID `json:"user_id" db:"user_id"`
 	Emoji     string    `json:"emoji" db:"emoji"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	
+
 	// Virtual field
 	User *User `json:"user,omitempty" db:"-"`
 }
@@ -108,4 +108,15 @@ type Attachment struct {
 	FileType   *string   `json:"file_type,omitempty" db:"file_type"`
 	FileSize   *int64    `json:"file_size,omitempty" db:"file_size"`
 	UploadedAt time.Time `json:"uploaded_at" db:"uploaded_at"`
+}
+
+type WorkspaceInvite struct {
+	ID          uuid.UUID  `json:"id" db:"id"`
+	WorkspaceID uuid.UUID  `json:"workspace_id" db:"workspace_id"`
+	InviterID   uuid.UUID  `json:"inviter_id" db:"inviter_id"`
+	Code        string     `json:"code" db:"code"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty" db:"expires_at"`
+	MaxUses     *int       `json:"max_uses,omitempty" db:"max_uses"`
+	Uses        int        `json:"uses" db:"uses"`
+	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 }
