@@ -67,16 +67,19 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	channelRepo := repository.NewChannelRepository(db)
+	messageRepo := repository.NewMessageRepository(db)
 
 	// Initialize services
 	authService := service.NewAuthService(userRepo, jwtManager)
 	workspaceService := service.NewWorkspaceService(workspaceRepo)
 	channelService := service.NewChannelService(channelRepo, workspaceRepo)
+	messageService := service.NewMessageService(messageRepo, channelRepo, workspaceRepo)
 
 	// Initialize handlers
 	authHandler := handler.NewAuthHandler(authService, cfg)
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	channelHandler := handler.NewChannelHandler(channelService)
+	messageHandler := handler.NewMessageHandler(messageService)
 
 	// Create Gin router
 	router := gin.Default()
@@ -150,12 +153,17 @@ func main() {
 				channels.PUT("/:id", channelHandler.Update)
 				channels.DELETE("/:id", channelHandler.Delete)
 
-				channels.GET("/:id/messages", func(c *gin.Context) {
-					c.JSON(http.StatusOK, gin.H{"message": "Get messages - TODO"})
-				})
-				channels.POST("/:id/messages", func(c *gin.Context) {
-					c.JSON(http.StatusOK, gin.H{"message": "Send message - TODO"})
-				})
+				// Message routes within a channel
+				channels.GET("/:id/messages", messageHandler.ListByChannel)
+				channels.POST("/:id/messages", messageHandler.Send)
+			}
+
+			// Individual message actions
+			messages := protected.Group("/messages")
+			{
+				messages.GET("/:id/thread", messageHandler.GetThread)
+				messages.PUT("/:id", messageHandler.Update)
+				messages.DELETE("/:id", messageHandler.Delete)
 			}
 		}
 	}

@@ -1,0 +1,170 @@
+package repository
+
+import (
+	"database/sql"
+
+	"github.com/DoDuy2004/slack-clone/backend/internal/database"
+	"github.com/DoDuy2004/slack-clone/backend/internal/models"
+	"github.com/google/uuid"
+)
+
+type MessageRepository interface {
+	Create(message *models.Message) error
+	FindByID(id uuid.UUID) (*models.Message, error)
+	ListByChannelID(channelID uuid.UUID, limit, offset int) ([]*models.Message, error)
+	ListReplies(parentID uuid.UUID) ([]*models.Message, error)
+	Update(message *models.Message) error
+	SoftDelete(id uuid.UUID) error
+}
+
+type postgresMessageRepository struct {
+	db *database.DB
+}
+
+func NewMessageRepository(db *database.DB) MessageRepository {
+	return &postgresMessageRepository{db: db}
+}
+
+func (r *postgresMessageRepository) Create(message *models.Message) error {
+	query := `
+		INSERT INTO messages (id, content, sender_id, channel_id, dm_id, parent_message_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING created_at, updated_at
+	`
+	return r.db.QueryRow(
+		query,
+		message.ID,
+		message.Content,
+		message.SenderID,
+		message.ChannelID,
+		message.DMID,
+		message.ParentMessageID,
+	).Scan(&message.CreatedAt, &message.UpdatedAt)
+}
+
+func (r *postgresMessageRepository) FindByID(id uuid.UUID) (*models.Message, error) {
+	m := &models.Message{}
+	query := `
+		SELECT id, content, sender_id, channel_id, dm_id, parent_message_id, edited_at, deleted_at, created_at, updated_at
+		FROM messages
+		WHERE id = $1
+	`
+	err := r.db.QueryRow(query, id).Scan(
+		&m.ID, &m.Content, &m.SenderID, &m.ChannelID, &m.DMID, &m.ParentMessageID, &m.EditedAt, &m.DeletedAt, &m.CreatedAt, &m.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (r *postgresMessageRepository) ListByChannelID(channelID uuid.UUID, limit, offset int) ([]*models.Message, error) {
+	query := `
+		SELECT m.id, m.content, m.sender_id, m.channel_id, m.dm_id, m.parent_message_id, m.edited_at, m.deleted_at, m.created_at, m.updated_at,
+		       u.username, u.avatar_url, u.full_name,
+		       (SELECT COUNT(*) FROM messages WHERE parent_message_id = m.id) as reply_count
+		FROM messages m
+		LEFT JOIN users u ON m.sender_id = u.id
+		WHERE m.channel_id = $1 AND m.parent_message_id IS NULL
+		ORDER BY m.created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+	rows, err := r.db.Query(query, channelID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []*models.Message
+	for rows.Next() {
+		m := &models.Message{}
+		var username, fullName, avatarURL sql.NullString
+		if err := rows.Scan(
+			&m.ID, &m.Content, &m.SenderID, &m.ChannelID, &m.DMID, &m.ParentMessageID, &m.EditedAt, &m.DeletedAt, &m.CreatedAt, &m.UpdatedAt,
+			&username, &avatarURL, &fullName, &m.ReplyCount,
+		); err != nil {
+			return nil, err
+		}
+
+		if username.Valid {
+			m.Sender = &models.User{
+				ID:       *m.SenderID,
+				Username: username.String,
+			}
+			if avatarURL.Valid {
+				m.Sender.AvatarURL = &avatarURL.String
+			}
+			if fullName.Valid {
+				m.Sender.FullName = &fullName.String
+			}
+		}
+		messages = append(messages, m)
+	}
+	return messages, nil
+}
+
+func (r *postgresMessageRepository) ListReplies(parentID uuid.UUID) ([]*models.Message, error) {
+	query := `
+		SELECT m.id, m.content, m.sender_id, m.channel_id, m.dm_id, m.parent_message_id, m.edited_at, m.deleted_at, m.created_at, m.updated_at,
+		       u.username, u.avatar_url, u.full_name
+		FROM messages m
+		LEFT JOIN users u ON m.sender_id = u.id
+		WHERE m.parent_message_id = $1
+		ORDER BY m.created_at ASC
+	`
+	rows, err := r.db.Query(query, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []*models.Message
+	for rows.Next() {
+		m := &models.Message{}
+		var username, fullName, avatarURL sql.NullString
+		if err := rows.Scan(
+			&m.ID, &m.Content, &m.SenderID, &m.ChannelID, &m.DMID, &m.ParentMessageID, &m.EditedAt, &m.DeletedAt, &m.CreatedAt, &m.UpdatedAt,
+			&username, &avatarURL, &fullName,
+		); err != nil {
+			return nil, err
+		}
+
+		if username.Valid {
+			m.Sender = &models.User{
+				ID:       *m.SenderID,
+				Username: username.String,
+			}
+			if avatarURL.Valid {
+				m.Sender.AvatarURL = &avatarURL.String
+			}
+			if fullName.Valid {
+				m.Sender.FullName = &fullName.String
+			}
+		}
+		messages = append(messages, m)
+	}
+	return messages, nil
+}
+
+func (r *postgresMessageRepository) Update(message *models.Message) error {
+	query := `
+		UPDATE messages
+		SET content = $1, edited_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+	`
+	_, err := r.db.Exec(query, message.Content, message.ID)
+	return err
+}
+
+func (r *postgresMessageRepository) SoftDelete(id uuid.UUID) error {
+	query := `
+		UPDATE messages
+		SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`
+	_, err := r.db.Exec(query, id)
+	return err
+}
