@@ -82,6 +82,10 @@ func main() {
 		log.Fatal("Failed to initialize storage:", err)
 	}
 
+	// Initialize WebSocket Hub
+	hub := websocket.NewHub()
+	go hub.Run()
+
 	// Initialize services
 	authService := service.NewAuthService(userRepo, jwtManager)
 	workspaceService := service.NewWorkspaceService(workspaceRepo)
@@ -90,10 +94,7 @@ func main() {
 	dmService := service.NewDMService(dmRepo, workspaceRepo, userRepo)
 	reactionService := service.NewReactionService(reactionRepo, messageRepo, channelRepo, dmRepo, workspaceRepo)
 	fileService := service.NewFileService(attachmentRepo, storageService)
-
-	// Initialize WebSocket Hub
-	hub := websocket.NewHub()
-	go hub.Run()
+	readService := service.NewReadReceiptService(channelRepo, dmRepo, hub)
 
 	presenceService := service.NewPresenceService(userRepo, hub)
 
@@ -105,6 +106,7 @@ func main() {
 	dmHandler := handler.NewDMHandler(dmService)
 	reactionHandler := handler.NewReactionHandler(reactionService, messageService, hub)
 	fileHandler := handler.NewFileHandler(fileService)
+	readHandler := handler.NewReadReceiptHandler(readService)
 	wsHandler := websocket.NewHandler(hub, jwtManager, presenceService)
 
 	// Create Gin router
@@ -215,6 +217,10 @@ func main() {
 	// File routes
 	router.POST("/api/files/upload", middleware.AuthMiddleware(jwtManager), fileHandler.Upload)
 	router.Static("/uploads", "./uploads")
+
+	// Read Receipt routes
+	router.POST("/api/channels/:id/read", middleware.AuthMiddleware(jwtManager), readHandler.MarkChannelAsRead)
+	router.POST("/api/dms/:id/read", middleware.AuthMiddleware(jwtManager), readHandler.MarkDMAsRead)
 
 	// WebRTC signaling endpoint
 	router.GET("/webrtc/signaling", func(c *gin.Context) {

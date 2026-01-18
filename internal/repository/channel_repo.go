@@ -21,6 +21,7 @@ type ChannelRepository interface {
 	RemoveMember(channelID, userID uuid.UUID) error
 	IsMember(channelID, userID uuid.UUID) (bool, error)
 	ListMembers(channelID uuid.UUID) ([]*models.ChannelMember, error)
+	UpdateLastRead(channelID, userID uuid.UUID) error
 }
 
 type postgresChannelRepository struct {
@@ -169,4 +170,14 @@ func (r *postgresChannelRepository) ListMembers(channelID uuid.UUID) ([]*models.
 		members = append(members, m)
 	}
 	return members, nil
+}
+
+func (r *postgresChannelRepository) UpdateLastRead(channelID, userID uuid.UUID) error {
+	query := `
+		UPDATE channel_members
+		SET last_read_at = CURRENT_TIMESTAMP
+		WHERE channel_id = $1 AND user_id = $2
+	`
+	_, err := r.db.Exec(query, channelID, userID)
+	return err
 }

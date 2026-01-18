@@ -20,7 +20,7 @@ type MessageService interface {
 	UpdateMessage(userID uuid.UUID, messageID uuid.UUID, req *dto.UpdateMessageRequest) (*models.Message, error)
 	DeleteMessage(userID uuid.UUID, messageID uuid.UUID) error
 	SendChannelMessage(userID, channelID uuid.UUID, content string, parentID *uuid.UUID, attachmentIDs []uuid.UUID) (*models.Message, error)
-	SendDMMessage(userID, dmID uuid.UUID, content string, attachmentIDs []uuid.UUID) (*models.Message, error)
+	SendDMMessage(userID, dmID uuid.UUID, content string, parentID *uuid.UUID, attachmentIDs []uuid.UUID) (*models.Message, error)
 }
 
 type messageService struct {
@@ -152,7 +152,7 @@ func (s *messageService) GetChannelMessages(userID uuid.UUID, channelID uuid.UUI
 	return s.messageRepo.ListByChannelID(channelID, limit, offset)
 }
 
-func (s *messageService) SendDMMessage(userID, dmID uuid.UUID, content string, attachmentIDs []uuid.UUID) (*models.Message, error) {
+func (s *messageService) SendDMMessage(userID, dmID uuid.UUID, content string, parentID *uuid.UUID, attachmentIDs []uuid.UUID) (*models.Message, error) {
 	// 1. Verify user is participant in DM
 	isParticipant, err := s.dmRepo.IsParticipant(dmID, userID)
 	if err != nil {
@@ -162,11 +162,23 @@ func (s *messageService) SendDMMessage(userID, dmID uuid.UUID, content string, a
 		return nil, ErrUnauthorized
 	}
 
+	// Verify parent message
+	if parentID != nil {
+		parent, err := s.messageRepo.FindByID(*parentID)
+		if err != nil {
+			return nil, err
+		}
+		if parent == nil || parent.DMID == nil || *parent.DMID != dmID {
+			return nil, errors.New("invalid parent message")
+		}
+	}
+
 	message := &models.Message{
-		ID:       uuid.New(),
-		Content:  content,
-		SenderID: &userID,
-		DMID:     &dmID,
+		ID:              uuid.New(),
+		Content:         content,
+		SenderID:        &userID,
+		DMID:            &dmID,
+		ParentMessageID: parentID,
 	}
 
 	if err := s.messageRepo.Create(message); err != nil {

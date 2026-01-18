@@ -14,6 +14,7 @@ type DMRepository interface {
 	ListByUserID(workspaceID, userID uuid.UUID) ([]*models.DirectMessage, error)
 	GetByID(id uuid.UUID) (*models.DirectMessage, error)
 	IsParticipant(dmID, userID uuid.UUID) (bool, error)
+	UpdateLastRead(dmID, userID uuid.UUID) error
 }
 
 type postgresDMRepository struct {
@@ -113,4 +114,14 @@ func (r *postgresDMRepository) IsParticipant(dmID, userID uuid.UUID) (bool, erro
 	var exists bool
 	err := r.db.QueryRow(query, dmID, userID).Scan(&exists)
 	return exists, err
+}
+
+func (r *postgresDMRepository) UpdateLastRead(dmID, userID uuid.UUID) error {
+	query := `
+		UPDATE dm_participants
+		SET last_read_at = CURRENT_TIMESTAMP
+		WHERE dm_id = $1 AND user_id = $2
+	`
+	_, err := r.db.Exec(query, dmID, userID)
+	return err
 }

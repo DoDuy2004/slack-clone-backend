@@ -79,7 +79,7 @@ func (h *MessageHandler) SendDM(c *gin.Context) {
 		return
 	}
 
-	message, err := h.messageService.SendDMMessage(userID, dmID, req.Content, req.AttachmentIDs)
+	message, err := h.messageService.SendDMMessage(userID, dmID, req.Content, req.ParentMessageID, req.AttachmentIDs)
 	if err != nil {
 		if err == service.ErrUnauthorized {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
